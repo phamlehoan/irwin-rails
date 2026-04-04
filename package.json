@@ -1,0 +1,105 @@
+{
+  "name": "ts-rails",
+  "version": "1.0.0",
+  "description": "Irwin framework rails layer (Express routing, controllers, jobs, mailers, swagger helpers)",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "rails": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./cache": {
+      "types": "./dist/cache.d.ts",
+      "require": "./dist/cache.js",
+      "import": "./dist/cache.js",
+      "default": "./dist/cache.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "require": "./dist/errors.js",
+      "import": "./dist/errors.js",
+      "default": "./dist/errors.js"
+    },
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "require": "./dist/logger.js",
+      "import": "./dist/logger.js",
+      "default": "./dist/logger.js"
+    },
+    "./pagination": {
+      "types": "./dist/pagination.d.ts",
+      "require": "./dist/pagination.js",
+      "import": "./dist/pagination.js",
+      "default": "./dist/pagination.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "cache": [
+        "dist/cache.d.ts"
+      ],
+      "errors": [
+        "dist/errors.d.ts"
+      ],
+      "logger": [
+        "dist/logger.d.ts"
+      ],
+      "pagination": [
+        "dist/pagination.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "commander": "^9.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "yarn build",
+    "postbuild": "node -e \"const fs = require('fs'); const p = 'dist/cli.js'; if (fs.existsSync(p)) fs.chmodSync(p, 0o755)\""
+  },
+  "peerDependencies": {
+    "class-transformer": ">=0.5.1",
+    "class-validator": ">=0.14.0",
+    "cookie-parser": ">=1.4.0",
+    "dayjs": ">=1.11.0",
+    "express": ">=4.18.0",
+    "http-errors": ">=2.0.0",
+    "method-override": ">=3.0.0",
+    "nodemailer": ">=6.0.0",
+    "pluralize": ">=8.0.0",
+    "reflect-metadata": ">=0.2.0",
+    "socket.io": ">=4.0.0",
+    "swagger-ui-express": ">=5.0.0"
+  },
+  "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610",
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/method-override": "^3.0.0",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^25.5.2",
+    "@types/nodemailer": "^8.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "cookie-parser": "^1.4.7",
+    "dayjs": "^1.11.20",
+    "express": "^5.2.1",
+    "http-errors": "^2.0.1",
+    "method-override": "^3.0.0",
+    "nodemailer": "^8.0.4",
+    "pluralize": "^8.0.0",
+    "reflect-metadata": "^0.2.2",
+    "socket.io": "^4.8.3",
+    "swagger-ui-express": "^5.0.1"
+  }
+}
