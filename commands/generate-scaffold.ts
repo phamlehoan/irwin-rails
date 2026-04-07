@@ -8,7 +8,10 @@ if (args.length < 1) {
   process.exit(1);
 }
 
-const inputName = args[0]; // Ví dụ: Admin/User
+const isApi = args.includes("--api");
+const cleanArgs = args.filter(arg => arg !== "--api");
+
+const inputName = cleanArgs[0]; // Ví dụ: Admin/User
 const parts = inputName.split(/[:/]/);
 const rawModelName = parts.pop()!; // User
 const subDir = parts.join("/").toLowerCase(); // admin
@@ -21,7 +24,7 @@ const className = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerC
 
 const viewBase = [...parts, modelPlural].map(p => p.toLowerCase()).join(".");
 
-const fields = args.slice(1).map((f) => {
+const fields = cleanArgs.slice(1).map((f) => {
   const [name, type] = f.split(":");
   return { name, type: type || "string" };
 });
@@ -48,7 +51,43 @@ if (parts.length > 0) {
 }
 
 // 1. Generate Controller
-const controllerTemplate = `import { FlashType } from "@configs/enum";
+const controllerTemplate = isApi 
+? `import { ${parentClass} } from "${parentImport}";
+import models from "@models";
+
+export class ${className} extends ${parentClass} {
+  async index() {
+    const ${modelPlural} = await models.${modelLower}.findMany();
+    this.renderJson(${modelPlural});
+  }
+
+  async show() {
+    const ${modelLower} = await models.${modelLower}.findUnique({ where: { id: this.req.params.id } });
+    this.renderJson(${modelLower});
+  }
+
+  async create() {
+    const params = await this.params.permit(${fields.map((f) => `'${f.name}'`).join(", ")});
+    const ${modelLower} = await models.${modelLower}.create({ data: params });
+    this.renderJson(${modelLower}, 201);
+  }
+
+  async update() {
+    const params = await this.params.permit(${fields.map((f) => `'${f.name}'`).join(", ")});
+    const ${modelLower} = await models.${modelLower}.update({
+      where: { id: this.req.params.id },
+      data: params,
+    });
+    this.renderJson(${modelLower});
+  }
+
+  async destroy() {
+    await models.${modelLower}.delete({ where: { id: this.req.params.id } });
+    this.renderJson({ success: true });
+  }
+}
+`
+: `import { FlashType } from "@configs/enum";
 import { ${parentClass} } from "${parentImport}";
 import models from "@models";
 
@@ -103,7 +142,7 @@ import { ${className} } from "@controllers/${subDir ? subDir + "/" : ""}${modelP
 
 export class ${modelName}Route extends RailsRoute {
   draw() {
-    this.resource("${modelPlural}", ${className});
+    this.resource("${modelPlural}", ${className}${isApi ? ", { api: true }" : ""});
   }
 }
 `;
@@ -204,11 +243,14 @@ const writeFile = (filePath: string, content: string) => {
 writeFile(paths.controller, controllerTemplate);
 writeFile(paths.test, testTemplate);
 writeFile(paths.route, routeTemplate);
-writeFile(path.join(paths.viewsDir, "show.pug"), showView);
-writeFile(path.join(paths.viewsDir, "index.pug"), indexView);
-writeFile(path.join(paths.viewsDir, "_form.pug"), formView);
-writeFile(path.join(paths.viewsDir, "new.pug"), newView);
-writeFile(path.join(paths.viewsDir, "edit.pug"), editView);
+
+if (!isApi) {
+  writeFile(path.join(paths.viewsDir, "show.pug"), showView);
+  writeFile(path.join(paths.viewsDir, "index.pug"), indexView);
+  writeFile(path.join(paths.viewsDir, "_form.pug"), formView);
+  writeFile(path.join(paths.viewsDir, "new.pug"), newView);
+  writeFile(path.join(paths.viewsDir, "edit.pug"), editView);
+}
 
 const typeMap: Record<string, string> = {
   string: "String",

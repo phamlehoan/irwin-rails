@@ -8,8 +8,11 @@ if (args.length < 1) {
   process.exit(1);
 }
 
-const inputName = args[0]; // Ví dụ: Admin:User hoặc User
-const actions = args.slice(1);
+const isApi = args.includes("--api");
+const cleanArgs = args.filter(arg => arg !== "--api");
+
+const inputName = cleanArgs[0]; // Ví dụ: Admin:User hoặc User
+const actions = cleanArgs.slice(1);
 
 const parts = inputName.split(/[:/]/);
 const rawName = parts.pop()!; // User
@@ -38,7 +41,18 @@ if (parts.length > 0) {
 const targetActions = actions.length > 0 ? actions : ["index", "show", "new", "edit", "create", "update", "destroy"];
 
 // 1. Template Controller
-const template = `import { FlashType } from "@configs/enum";
+const template = isApi
+? `import { ${parentClass} } from "${parentImport}";
+
+export class ${className} extends ${parentClass} {
+${targetActions.filter(a => !['new', 'edit'].includes(a)).map(action => `
+  async ${action}() {
+    // TODO: logic for ${action}
+    this.renderJson({ action: "${action}" });
+  }`).join('\n')}
+}
+`
+: `import { FlashType } from "@configs/enum";
 import { ${parentClass} } from "${parentImport}";
 
 export class ${className} extends ${parentClass} {
@@ -85,19 +99,21 @@ const writeFile = (filePath: string, content: string) => {
 writeFile(controllerPath, template);
 
 // 2. Create Views for each action
-targetActions.forEach((action) => {
-  const viewPath = path.join(viewsDir, `${action}.pug`);
-  const viewTemplate = `extends ../layouts/application
+if (!isApi) {
+  targetActions.forEach((action) => {
+    const viewPath = path.join(viewsDir, `${action}.pug`);
+    const viewTemplate = `extends ../layouts/application
 
 block content
   h1 ${className}#${action}
   p Find me in app/views/${viewBase}.view/${action}.pug
 `;
-  writeFile(viewPath, viewTemplate);
-});
+    writeFile(viewPath, viewTemplate);
+  });
+}
 
 console.log(`
 \x1b[33mNext Steps:\x1b[0m
 Register routes in \x1b[35mapp/routes/index.ts\x1b[0m:
-  this.resource("${namePlural}", ${className});
+  this.resource("${namePlural}", ${className}${isApi ? ", { api: true }" : ""});
 `);

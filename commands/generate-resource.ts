@@ -8,7 +8,10 @@ if (args.length < 1) {
   process.exit(1);
 }
 
-const inputName = args[0];
+const isApi = args.includes("--api");
+const cleanArgs = args.filter(arg => arg !== "--api");
+
+const inputName = cleanArgs[0];
 const parts = inputName.split(/[:/]/);
 const rawName = parts.pop()!;
 const subDir = parts.join("/").toLowerCase();
@@ -55,7 +58,7 @@ export class ${className} extends ${parentClass} {
   }
 
   async create() {
-    const params = await this.params.permit(${args.slice(1).map(f => `'${f.split(':')[0]}'`).join(", ")});
+    const params = await this.params.permit(${cleanArgs.slice(1).map(f => `'${f.split(':')[0]}'`).join(", ")});
     const item = await models.${rawName.toLowerCase()}.create({ data: params });
     this.renderJson(item, 201);
   }
@@ -67,7 +70,7 @@ import { ${className} } from "@controllers/${subDir ? subDir + "/" : ""}${namePl
 
 export class ${rawName}Route extends RailsRoute {
   draw() {
-    this.resource("${namePlural}", ${className}, { only: ["index", "show", "create"] });
+    this.resource("${namePlural}", ${className}, { only: ["index", "show", "create"]${isApi ? ", api: true" : ""} });
   }
 }
 `;

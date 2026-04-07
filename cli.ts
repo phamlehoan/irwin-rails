@@ -19,11 +19,15 @@ program
   )
   .argument("<name>", "Name of the resource")
   .argument("[fields...]", "Fields for the resource")
-  .action((type, name, fields) => {
+  .option("--api", "Generate API-only resource")
+  .action((type, name, fields, options) => {
     const commandFile = path.join(__dirname, "commands", `generate-${type}.js`);
+    const spawnArgs = [name, ...fields];
+    if (options.api) spawnArgs.push("--api");
+
     if (fs.existsSync(commandFile)) {
       // Run the compiled command
-      const child = spawn("node", [commandFile, name, ...fields], {
+      const child = spawn("node", [commandFile, ...spawnArgs], {
         stdio: "inherit",
         cwd: process.cwd(),
         shell: true,
@@ -40,10 +44,7 @@ program
         `generate-${type}.ts`,
       );
       if (fs.existsSync(tsCommandFile)) {
-        const child = spawn(
-          "npx",
-          ["ts-node", tsCommandFile, name, ...fields],
-          {
+        const child = spawn("npx", ["ts-node", tsCommandFile, ...spawnArgs], {
             stdio: "inherit",
             cwd: process.cwd(),
             shell: true,
