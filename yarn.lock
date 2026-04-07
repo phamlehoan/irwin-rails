@@ -89,6 +89,11 @@
   dependencies:
     "@types/node" "*"
 
+"@types/pluralize@^0.0.33":
+  version "0.0.33"
+  resolved "https://registry.npmjs.org/@types/pluralize/-/pluralize-0.0.33.tgz#8ad9018368c584d268667dd9acd5b3b806e8c82a"
+  integrity sha512-JOqsl+ZoCpP4e8TDke9W79FDcSgPAR0l6pixx2JHkhnRjvShyYiAYw2LVsnA7K08Y6DeOnaU6ujmENO4os/cYg==
+
 "@types/qs@*":
   version "6.15.0"
   resolved "https://registry.npmjs.org/@types/qs/-/qs-6.15.0.tgz#963ab61779843fe910639a50661b48f162bc7f79"
@@ -106,13 +111,21 @@
   dependencies:
     "@types/node" "*"
 
-"@types/serve-static@^2":
+"@types/serve-static@*", "@types/serve-static@^2":
   version "2.2.0"
   resolved "https://registry.npmjs.org/@types/serve-static/-/serve-static-2.2.0.tgz#d4a447503ead0d1671132d1ab6bd58b805d8de6a"
   integrity sha512-8mam4H1NHLtu7nmtalF7eyBH14QyOASmcxHhSfEoRyr0nP/YdoesEtU+uSRvMe96TW/HPTtkoKqQLl53N7UXMQ==
   dependencies:
     "@types/http-errors" "*"
     "@types/node" "*"
+
+"@types/swagger-ui-express@^4.1.8":
+  version "4.1.8"
+  resolved "https://registry.npmjs.org/@types/swagger-ui-express/-/swagger-ui-express-4.1.8.tgz#3c0e0bf2543c7efb500eaa081bfde6d92f88096c"
+  integrity sha512-AhZV8/EIreHFmBV5wAs0gzJUNq9JbbSXgJLQubCC0jtIo6prnI9MIRRxnU4MZX9RB9yXxF1V4R7jtLl/Wcj31g==
+  dependencies:
+    "@types/express" "*"
+    "@types/serve-static" "*"
 
 "@types/validator@^13.15.3":
   version "13.15.10"

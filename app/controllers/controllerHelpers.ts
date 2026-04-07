@@ -22,7 +22,7 @@ export function action(
   Klass: new (...args: any[]) => any,
   actionName = "execute",
 ): RequestHandler {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  const handler: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
     const instance = new Klass();
     (instance as any).req = req;
     (instance as any).res = res;
@@ -59,6 +59,14 @@ export function action(
       next(error);
     }
   };
+
+  // Gắn metadata để lệnh 'rails routes' có thể nhận diện được Controller#Action
+  (handler as any)._swaggerMetadata = {
+    controller: Klass.name,
+    action: actionName,
+  };
+
+  return handler;
 }
 
 async function runFilters(

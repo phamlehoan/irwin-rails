@@ -319,7 +319,7 @@ export abstract class RailsRoute {
       }
 
       const mainHandler = handler(actionName);
-      (mainHandler as any)._swaggerMetadata = { op };
+      (mainHandler as any)._swaggerMetadata = { op, controller: Controller.name, action: actionName };
       handlers.push(mainHandler);
 
       (this.route as any)[method](routePath, ...handlers);
@@ -559,7 +559,13 @@ export abstract class RailsRoute {
 
       const lastHandler = finalHandlers[finalHandlers.length - 1];
       if (typeof lastHandler === "function") {
-        (lastHandler as any)._swaggerMetadata = { op: operation };
+        // Bảo lưu metadata hiện có (từ helper action()) và bổ sung thông tin Swagger
+        const existingMeta = (lastHandler as any)._swaggerMetadata || {};
+        (lastHandler as any)._swaggerMetadata = {
+          ...existingMeta,
+          op: operation,
+          action: existingMeta.action || (handlers as any).name || "custom",
+        };
       }
     }
 

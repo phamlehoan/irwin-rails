@@ -4,7 +4,7 @@ import pluralize from "pluralize";
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
-  console.error("Usage: yarn g:model ModelName field:type field:type");
+  console.error("Usage: yarn g model ModelName field:type field:type");
   process.exit(1);
 }
 

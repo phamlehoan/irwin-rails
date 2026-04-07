@@ -1,3 +1,4 @@
+/// <reference path="../../express-augment.d.ts" />
 import { Request, Response } from "express";
 import { Server as SocketServer } from "socket.io";
 import { ApiResponse } from "./response";
@@ -87,5 +88,12 @@ export class RailsController {
    */
   protected redirect(path: string) {
     this.res.redirect(path);
+  }
+
+  /**
+   * Helper để gửi flash message (yêu cầu express-flash middleware)
+   */
+  protected flash(type: string, message: any) {
+    (this.req as any).flash(type, message);
   }
 }

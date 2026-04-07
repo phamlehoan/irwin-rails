@@ -86,13 +86,16 @@ export class ParamsProxy<M extends ValidatorClass = ValidatorClass> {
    * permit(...fields) - Rails: chỉ giữ các field được phép.
    * Model (từ params(Model)) dùng để validate qua class-validator.
    */
-  async permit(...fields: string[]): Promise<InstanceType<M>> {
-    if (!this.Model) {
-      throw new Error("params(Model).permit(...) - Model is required");
+  async permit(...fields: string[]): Promise<any> {
+    const picked: Record<string, unknown> = {};
+    for (const f of fields) {
+      if (f in this.data) picked[f] = this.data[f];
     }
-    return strongParams(this.data, this.Model, fields) as Promise<
-      InstanceType<M>
-    >;
+
+    if (!this.Model) {
+      return picked;
+    }
+    return strongParams(this.data, this.Model, fields);
   }
 
   get(key: string): unknown {

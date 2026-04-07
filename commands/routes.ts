@@ -124,8 +124,14 @@ filteredRoutes.forEach((r: RouteInfo) => {
     fullPath = fullPath.slice(0, -1);
   }
 
-  // In theo định dạng: [GET]    /admin/users
-  console.info(`${method}\x1b[36m| \x1b[0m${fullPath}`);
+  // Hiển thị Controller#Action nếu có
+  let handler = "";
+  if (r.controller && r.action) {
+    handler = ` \x1b[90m=> ${r.controller.replace("Controller", "")}#${r.action}\x1b[0m`;
+  }
+
+  // In theo định dạng: [GET]    /admin/users  => AdminUsers#index
+  console.info(`${method}\x1b[36m| \x1b[0m${fullPath.padEnd(40)}${handler}`);
 });
 
 console.info(

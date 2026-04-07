@@ -9,7 +9,7 @@ if (args.length < 1) {
 }
 
 const inputName = args[0];
-const parts = inputName.split("/");
+const parts = inputName.split(/[:/]/);
 const rawName = parts.pop()!;
 const subDir = parts.join("/").toLowerCase();
 const namePlural = pluralize(rawName.toLowerCase());
@@ -28,11 +28,22 @@ const routePath = path.join(
   `${namePlural}.route.ts`,
 );
 
-const controllerTemplate = `import { Request, Response } from "express";
-import { RailsController } from "ts-rails";
+const className = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join("") + 
+                 rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() + "Controller";
+
+let parentClass = "ApplicationController";
+let parentImport = ".";
+
+if (parts.length > 0) {
+  const lastNamespace = parts[parts.length - 1].toLowerCase();
+  parentClass = lastNamespace.charAt(0).toUpperCase() + lastNamespace.slice(1) + "Controller";
+  parentImport = `./${lastNamespace}.controller`;
+}
+
+const controllerTemplate = `import { ${parentClass} } from "${parentImport}";
 import models from "@models";
 
-export class ${pluralize(rawName)}Controller extends RailsController {
+export class ${className} extends ${parentClass} {
   async index() {
     const items = await models.${rawName.toLowerCase()}.findMany();
     this.renderJson(items);
@@ -44,18 +55,19 @@ export class ${pluralize(rawName)}Controller extends RailsController {
   }
 
   async create() {
-    const item = await models.${rawName.toLowerCase()}.create({ data: this.req.body });
+    const params = await this.params.permit(${args.slice(1).map(f => `'${f.split(':')[0]}'`).join(", ")});
+    const item = await models.${rawName.toLowerCase()}.create({ data: params });
     this.renderJson(item, 201);
   }
 }
 `;
 
 const routeTemplate = `import { RailsRoute } from "ts-rails";
-import { ${pluralize(rawName)}Controller } from "@controllers/${subDir ? subDir + "/" : ""}${namePlural}.controller";
+import { ${className} } from "@controllers/${subDir ? subDir + "/" : ""}${namePlural}.controller";
 
 export class ${rawName}Route extends RailsRoute {
   draw() {
-    this.resource("${namePlural}", ${pluralize(rawName)}Controller, { only: ["index", "show", "create"] });
+    this.resource("${namePlural}", ${className}, { only: ["index", "show", "create"] });
   }
 }
 `;

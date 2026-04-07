@@ -8,78 +8,71 @@ if (args.length < 1) {
   process.exit(1);
 }
 
-const inputName = args[0]; // Ví dụ: Admin/User
+const inputName = args[0]; // Ví dụ: Admin:User hoặc User
 const actions = args.slice(1);
 
-const parts = inputName.split("/");
+const parts = inputName.split(/[:/]/);
 const rawName = parts.pop()!; // User
 const subDir = parts.join("/").toLowerCase(); // admin
 
-const nameLower = rawName.toLowerCase();
-const namePlural = pluralize(nameLower); // categories
-
-// AdminUsersController
-const classNamePrefix = parts
-  .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
-  .join("");
-const controllerClassName = `${classNamePrefix}${pluralize(rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase())}Controller`;
+const namePlural = pluralize(rawName.toLowerCase());
+const className = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join("") + 
+                 rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() + "Controller";
 
 const root = process.cwd();
 const controllerDir = path.join(root, "app/controllers", subDir);
+const viewBase = [...parts, rawName].map(p => p.toLowerCase()).join(".");
 const controllerPath = path.join(controllerDir, `${namePlural}.controller.ts`);
-const testPath = path.join(
-  controllerDir,
-  "__tests__",
-  `${namePlural}.controller.spec.ts`,
-);
-const viewsDir = path.join(root, "app/views", subDir, namePlural);
+const viewsDir = path.join(root, "app/views", `${viewBase}.view`);
 
-// Kiểm tra lớp cha (Base Class)
-const hasAppController = fs.existsSync(
-  path.join(root, "app/controllers/application.controller.ts"),
-);
-const baseClass = hasAppController
-  ? "ApplicationController"
-  : "RailsController";
-const importBase = hasAppController
-  ? `import { ApplicationController } from "@controllers/application.controller";`
-  : `import { RailsController } from "ts-rails";`;
+let parentClass = "ApplicationController";
+let parentImport = ".";
+
+if (parts.length > 0) {
+  const lastNamespace = parts[parts.length - 1].toLowerCase();
+  parentClass = lastNamespace.charAt(0).toUpperCase() + lastNamespace.slice(1) + "Controller";
+  parentImport = `./${lastNamespace}.controller`;
+}
+
+// Nếu không truyền action, mặc định tạo 7 REST actions
+const targetActions = actions.length > 0 ? actions : ["index", "show", "new", "edit", "create", "update", "destroy"];
 
 // 1. Template Controller
-const template = `import { Request, Response } from "express";
-${importBase}
+const template = `import { FlashType } from "@configs/enum";
+import { ${parentClass} } from "${parentImport}";
 
-export class ${controllerClassName} extends ${baseClass} {
-${actions
-  .map(
-    (action) => `  async ${action}(req: Request, res: Response) {
-    res.render("${subDir ? subDir + "/" : ""}${namePlural}/${action}");
-  }`,
-  )
-  .join("\n\n")}
+export class ${className} extends ${parentClass} {
+  async index() {
+    this.render("${viewBase}.view/index");
+  }
+
+  async show() {
+    this.render("${viewBase}.view/show");
+  }
+
+  async new() {
+    this.render("${viewBase}.view/new");
+  }
+
+  async edit() {
+    this.render("${viewBase}.view/edit");
+  }
+
+  async create() {
+    this.flash(FlashType.Success, { msg: this.t("flash.created") });
+    this.redirect("/${subDir ? subDir + "/" : ""}${rawName.toLowerCase()}");
+  }
+
+  async update() {
+    this.flash(FlashType.Success, { msg: this.t("flash.updated") });
+    this.redirect("/${subDir ? subDir + "/" : ""}${rawName.toLowerCase()}/\${this.req.params.id}");
+  }
+
+  async destroy() {
+    this.flash(FlashType.Success, { msg: this.t("flash.destroyed") });
+    this.redirect("/${subDir ? subDir + "/" : ""}${rawName.toLowerCase()}");
+  }
 }
-`;
-
-// 1b. Template Test (Jest)
-const testTemplate = `import { ${controllerClassName} } from "../${namePlural}.controller";
-
-describe("${controllerClassName}", () => {
-  let controller: ${controllerClassName};
-
-  beforeEach(() => {
-    controller = new ${controllerClassName}();
-  });
-
-${actions
-  .map(
-    (action) => `  describe("${action}", () => {
-    it("should be defined", () => {
-      expect(controller.${action}).toBeDefined();
-    });
-  });`,
-  )
-  .join("\n")}
-});
 `;
 
 const writeFile = (filePath: string, content: string) => {
@@ -90,25 +83,21 @@ const writeFile = (filePath: string, content: string) => {
 };
 
 writeFile(controllerPath, template);
-writeFile(testPath, testTemplate);
 
 // 2. Create Views for each action
-actions.forEach((action) => {
+targetActions.forEach((action) => {
   const viewPath = path.join(viewsDir, `${action}.pug`);
   const viewTemplate = `extends ../layouts/application
 
 block content
-  h1 ${controllerClassName}#${action}
-  p Find me in app/views/${subDir ? subDir + "/" : ""}${namePlural}/${action}.pug
+  h1 ${className}#${action}
+  p Find me in app/views/${viewBase}.view/${action}.pug
 `;
   writeFile(viewPath, viewTemplate);
 });
 
-const routePath = subDir ? `/${subDir}/${namePlural}` : `/${namePlural}`;
-const viewRef = subDir ? `${subDir}/${namePlural}` : namePlural;
-
 console.log(`
 \x1b[33mNext Steps:\x1b[0m
 Register routes in \x1b[35mapp/routes/index.ts\x1b[0m:
-  this.get("${routePath}/${actions[0] || "index"}", action(${controllerClassName}, "${actions[0] || "index"}"));
+  this.resource("${namePlural}", ${className});
 `);

@@ -30,6 +30,8 @@ export type RouteInfo = {
   method: string;
   prefix: string;
   path: string;
+  controller?: string;
+  action?: string;
 };
 
 export interface MiddlewareFactory {
@@ -152,18 +154,21 @@ export class RailsApplication {
       route.handle.stack?.forEach((layer: any) => {
         if (layer.route) {
           const path = layer.route.path;
+          const stack = layer.route.stack;
+          const lastLayer = stack[stack.length - 1];
+          const swaggerMeta = lastLayer?.handle?._swaggerMetadata;
+
           Object.keys(layer.route.methods).forEach((method) => {
             this.routes.push({
               method: method.toUpperCase(),
               prefix: newPrefix,
               path: path,
+              controller: swaggerMeta?.controller,
+              action: swaggerMeta?.action,
             });
           });
 
           // Cập nhật Swagger Full Path nếu có metadata
-          const stack = layer.route.stack;
-          const lastLayer = stack[stack.length - 1];
-          const swaggerMeta = lastLayer?.handle?._swaggerMetadata;
           if (swaggerMeta) {
             const fullSwaggerPath = ("/" + newPrefix + "/" + path)
               .replace(/:([a-zA-Z0-9_]+)/g, "{$1}")
@@ -186,18 +191,21 @@ export class RailsApplication {
       });
     } else if (route.route) {
       const path = route.route.path;
+      const stack = route.route.stack;
+      const lastLayer = stack[stack.length - 1];
+      const swaggerMeta = lastLayer?.handle?._swaggerMetadata;
+
       Object.keys(route.route.methods).forEach((method) => {
         this.routes.push({
           method: method.toUpperCase(),
           prefix: prefix || "/",
           path: path,
+          controller: swaggerMeta?.controller,
+          action: swaggerMeta?.action,
         });
       });
 
       // Xử lý Swagger cho route đơn lẻ (không nằm trong router con)
-      const stack = route.route.stack;
-      const lastLayer = stack[stack.length - 1];
-      const swaggerMeta = lastLayer?.handle?._swaggerMetadata;
       if (swaggerMeta) {
         const fullSwaggerPath = ("/" + prefix + "/" + path)
           .replace(/:([a-zA-Z0-9_]+)/g, "{$1}")
