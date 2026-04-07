@@ -1,6 +1,6 @@
 {
   "name": "ts-rails",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "description": "Irwin framework rails layer (Express routing, controllers, jobs, mailers, swagger helpers)",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -16,28 +16,28 @@
       "default": "./dist/index.js"
     },
     "./cache": {
-      "types": "./dist/cache.d.ts",
-      "require": "./dist/cache.js",
-      "import": "./dist/cache.js",
-      "default": "./dist/cache.js"
+      "types": "./dist/configs/cache.d.ts",
+      "require": "./dist/configs/cache.js",
+      "import": "./dist/configs/cache.js",
+      "default": "./dist/configs/cache.js"
     },
     "./errors": {
-      "types": "./dist/errors.d.ts",
-      "require": "./dist/errors.js",
-      "import": "./dist/errors.js",
-      "default": "./dist/errors.js"
+      "types": "./dist/lib/utils/errors.d.ts",
+      "require": "./dist/lib/utils/errors.js",
+      "import": "./dist/lib/utils/errors.js",
+      "default": "./dist/lib/utils/errors.js"
     },
     "./logger": {
-      "types": "./dist/logger.d.ts",
-      "require": "./dist/logger.js",
-      "import": "./dist/logger.js",
-      "default": "./dist/logger.js"
+      "types": "./dist/configs/logger.d.ts",
+      "require": "./dist/configs/logger.js",
+      "import": "./dist/configs/logger.js",
+      "default": "./dist/configs/logger.js"
     },
     "./pagination": {
-      "types": "./dist/pagination.d.ts",
-      "require": "./dist/pagination.js",
-      "import": "./dist/pagination.js",
-      "default": "./dist/pagination.js"
+      "types": "./dist/app/controllers/pagination.d.ts",
+      "require": "./dist/app/controllers/pagination.js",
+      "import": "./dist/app/controllers/pagination.js",
+      "default": "./dist/app/controllers/pagination.js"
     },
     "./package.json": "./package.json"
   },

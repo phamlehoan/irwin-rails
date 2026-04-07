@@ -24,6 +24,7 @@ import {
 import { AppError, PasswordHasher } from "../lib";
 import { CacheStore } from "./cache";
 import { LoggerAdapter } from "./logger";
+import { registerSwaggerPath } from "./swagger";
 
 export type RouteInfo = {
   method: string;
@@ -143,9 +144,10 @@ export class RailsApplication {
         .replace(/\/\?$/, "") // Loại bỏ dấu gạch chéo tùy chọn ở cuối
         .replace(/\$$/, ""); // Loại bỏ ký tự kết thúc dòng $
 
-      const newPrefix = (
-        prefix + (segment.startsWith("/") ? segment : "/" + segment)
-      ).replace(/\/+/g, "/");
+      // Đảm bảo không cộng dồn prefix nếu segment đã bao gồm prefix cũ (tránh /api/v1/api/v1)
+      const newPrefix = (prefix && segment.startsWith(prefix))
+        ? segment
+        : (prefix + "/" + segment).replace(/\/+/g, "/");
 
       route.handle.stack?.forEach((layer: any) => {
         if (layer.route) {
@@ -157,6 +159,27 @@ export class RailsApplication {
               path: path,
             });
           });
+
+          // Cập nhật Swagger Full Path nếu có metadata
+          const stack = layer.route.stack;
+          const lastLayer = stack[stack.length - 1];
+          const swaggerMeta = lastLayer?.handle?._swaggerMetadata;
+          if (swaggerMeta) {
+            const fullSwaggerPath = ("/" + newPrefix + "/" + path)
+              .replace(/:([a-zA-Z0-9_]+)/g, "{$1}")
+              .replace(/\/+/g, "/");
+
+            // Ghi đè server ở mức operation để Swagger UI thực hiện curl từ gốc (/) 
+            // tránh việc bị cộng dồn với basePath/servers global của Application
+            const operation = {
+              ...swaggerMeta.op,
+              servers: [{ url: "/" }]
+            };
+
+            Object.keys(layer.route.methods).forEach((m) => {
+              registerSwaggerPath(fullSwaggerPath, m.toLowerCase() as any, operation);
+            });
+          }
         } else {
           this.processRoutes(layer, newPrefix);
         }
@@ -170,6 +193,25 @@ export class RailsApplication {
           path: path,
         });
       });
+
+      // Xử lý Swagger cho route đơn lẻ (không nằm trong router con)
+      const stack = route.route.stack;
+      const lastLayer = stack[stack.length - 1];
+      const swaggerMeta = lastLayer?.handle?._swaggerMetadata;
+      if (swaggerMeta) {
+        const fullSwaggerPath = ("/" + prefix + "/" + path)
+          .replace(/:([a-zA-Z0-9_]+)/g, "{$1}")
+          .replace(/\/+/g, "/");
+
+        const operation = {
+          ...swaggerMeta.op,
+          servers: [{ url: "/" }]
+        };
+
+        Object.keys(route.route.methods).forEach((m) => {
+          registerSwaggerPath(fullSwaggerPath, m.toLowerCase() as any, operation);
+        });
+      }
     }
   }
 
@@ -230,6 +272,11 @@ export class RailsApplication {
     if (this.isInitialized) return;
     this.setupStandardMiddlewares();
     this.mountRoutes();
+
+    // Kích hoạt việc quét lại Router để cập nhật Swagger Full Path
+    // Việc này cũng chuẩn bị dữ liệu cho CLI 'rails routes'
+    this.getRoutes();
+
     this.setupSwagger();
     this.setupErrorHandlers();
 

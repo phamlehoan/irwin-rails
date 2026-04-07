@@ -36,7 +36,6 @@ export interface CustomRouteOptions {
   setPermissionForAny?: string[];
   /** Document options. Body có thể truyền vào một Validator Class để tự động sinh Schema. */
   document?: Omit<DocOptions, "path" | "body"> & {
-    path?: string;
     body?: ValidatorClass | any;
   };
 }
@@ -49,7 +48,6 @@ export interface RouteOptions {
   setPermissionForAny?: string[];
   /** Document options cho resource */
   document?: {
-    path?: string;
     tags?: string[];
     summary?: string;
     body?: ValidatorClass | any;
@@ -290,7 +288,6 @@ export abstract class RailsRoute {
         >,
       };
       const op = buildSwaggerOp(docOpts);
-      registerSwaggerPath(swaggerPath, method, op);
 
       const handlers: any[] = [];
       const permCode =
@@ -320,7 +317,10 @@ export abstract class RailsRoute {
           );
         }
       }
-      handlers.push(handler(actionName));
+
+      const mainHandler = handler(actionName);
+      (mainHandler as any)._swaggerMetadata = { op };
+      handlers.push(mainHandler);
 
       (this.route as any)[method](routePath, ...handlers);
     };
@@ -370,8 +370,7 @@ export abstract class RailsRoute {
           act as string,
           method,
           fullPath,
-          (options!.document!.path ||
-            basePath.replace(/:([a-zA-Z0-9_]+)/g, "{$1}")) + apiPath,
+          (basePath.replace(/:([a-zA-Z0-9_]+)/g, "{$1}") + (apiPath || "")).replace(/\/+/g, "/"),
         );
       } else {
         let handlers = [handler(act as string)];
@@ -525,8 +524,7 @@ export abstract class RailsRoute {
     // 2. Swagger Registration
     if (options?.document) {
       // Tự động convert path Express (:id) sang Swagger ({id}) nếu không có path cụ thể
-      const swaggerPath =
-        options.document.path || path.replace(/:([a-zA-Z0-9_]+)/g, "{$1}");
+      const swaggerPath = path.replace(/:([a-zA-Z0-9_]+)/g, "{$1}");
 
       // Tự động suy diễn tags từ tên Controller nếu chưa có
       if (!options.document.tags && !Array.isArray(handlers)) {
@@ -546,7 +544,7 @@ export abstract class RailsRoute {
       const defaultResponses: Record<string | number, string> =
         method === "post" ? { 201: "Created" } : { 200: "OK" };
 
-      const { path: _p, responses, ...opts } = options.document; // loại bỏ path thừa nếu có
+      const { responses, ...opts } = options.document as any;
 
       const docInput = { ...opts };
       if (docInput.body) docInput.body = this.resolveBody(docInput.body);
@@ -558,7 +556,11 @@ export abstract class RailsRoute {
         ...resolved,
         responses: responses || defaultResponses,
       });
-      registerSwaggerPath(swaggerPath, method, operation);
+
+      const lastHandler = finalHandlers[finalHandlers.length - 1];
+      if (typeof lastHandler === "function") {
+        (lastHandler as any)._swaggerMetadata = { op: operation };
+      }
     }
 
     (this.route as any)[method](path, ...finalHandlers);
