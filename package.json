@@ -1,6 +1,6 @@
 {
   "name": "ts-rails",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Irwin framework rails layer (Express routing, controllers, jobs, mailers, swagger helpers)",
   "license": "MIT",
   "main": "./dist/index.js",

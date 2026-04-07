@@ -1,6 +1,15 @@
 import path from "path";
+import fs from "fs";
 import repl from "repl";
 import { RailsApplication } from "../configs";
+
+// Hỗ trợ nạp trực tiếp file .ts từ dự án
+try {
+  require("ts-node").register({
+    transpileOnly: true,
+  });
+  require("tsconfig-paths").register();
+} catch (e) {}
 
 // Đánh dấu đang chạy trong môi trường console để chặn cron jobs
 process.env.IRWIN_CONSOLE = "true";
@@ -17,18 +26,36 @@ const getApplication = () => {
     process.env.APP_PATH,
     path.join(root, "configs/application"),
     path.join(root, "src/configs/application"),
+    path.join(root, "src/app/application"),
+    path.join(root, "app/application"),
     path.join(root, "index"),
     path.join(root, "app"),
     path.join(root, "src/app"),
   ].filter(Boolean) as string[];
 
   for (const appPath of potentialPaths) {
+    // Kiểm tra file có tồn tại không trước khi require để tránh nuốt lỗi thực tế
+    const resolvedPath = [".ts", ".js", "/index.ts", "/index.js", ""]
+      .map(ext => appPath + ext)
+      .find(p => fs.existsSync(p));
+
+    if (!resolvedPath) continue;
+
     try {
       const mod = require(appPath);
-      const app = mod.default || mod;
-      if (app instanceof RailsApplication) return app;
+      let app = mod.default || mod;
+
+      // Kiểm tra Duck Typing: nếu có phương thức bootstrap thì đây là Rails App
+      const isInstance = app && typeof app.bootstrap === "function";
+      const isClass = typeof app === "function" && app.prototype && typeof app.prototype.bootstrap === "function";
+
+      if (isInstance) return app;
+      if (isClass) return new app();
     } catch (err) {
-      continue;
+      // Nếu file tồn tại mà lỗi load thì in lỗi ra để debug
+      originalLog(`\x1b[31m[Error] Failed to load application at ${appPath}:\x1b[0m`);
+      originalLog(err);
+      process.exit(1);
     }
   }
   return null;
@@ -54,7 +81,7 @@ const getModels = () => {
 const startConsole = async () => {
   const app = getApplication();
   if (!app) {
-    originalLog("[Error] Could not find RailsApplication instance.");
+    originalLog("[Error] Could not find Application instance.");
     process.exit(1);
   }
 

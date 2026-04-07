@@ -26,6 +26,7 @@ program
       const child = spawn("node", [commandFile, name, ...fields], {
         stdio: "inherit",
         cwd: process.cwd(),
+        shell: true,
       });
       child.on("close", (code) => {
         process.exit(code);
@@ -45,6 +46,7 @@ program
           {
             stdio: "inherit",
             cwd: process.cwd(),
+            shell: true,
           },
         );
         child.on("close", (code) => {
@@ -60,6 +62,7 @@ program
 // Add other commands like console, routes, notes
 program
   .command("console")
+  .alias("c")
   .description("Start Rails console")
   .action(() => {
     const commandFile = path.join(__dirname, "commands", "console.js");
@@ -67,6 +70,7 @@ program
       const child = spawn("node", [commandFile], {
         stdio: "inherit",
         cwd: process.cwd(),
+        shell: true,
       });
       child.on("close", (code) => {
         process.exit(code);
@@ -82,6 +86,7 @@ program
         const child = spawn("npx", ["ts-node", tsCommandFile], {
           stdio: "inherit",
           cwd: process.cwd(),
+          shell: true,
         });
         child.on("close", (code) => {
           process.exit(code);
@@ -95,6 +100,7 @@ program
 
 program
   .command("routes")
+  .alias("r")
   .description("List all routes")
   .action(() => {
     const commandFile = path.join(__dirname, "commands", "routes.js");
@@ -102,6 +108,7 @@ program
       const child = spawn("node", [commandFile], {
         stdio: "inherit",
         cwd: process.cwd(),
+        shell: true,
       });
       child.on("close", (code) => {
         process.exit(code);
@@ -112,6 +119,7 @@ program
         const child = spawn("npx", ["ts-node", tsCommandFile], {
           stdio: "inherit",
           cwd: process.cwd(),
+          shell: true,
         });
         child.on("close", (code) => {
           process.exit(code);
