@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import pluralize from "pluralize";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
+import { namespacePrefix, parseNamespace, pascalCase, urlPathPrefix } from "./generatorHelpers";
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
@@ -14,15 +16,14 @@ const cleanArgs = args.filter(arg => arg !== "--api");
 const inputName = cleanArgs[0]; // Ví dụ: Admin:User hoặc User
 const actions = cleanArgs.slice(1);
 
-const parts = inputName.split(/[:/]/);
-const rawName = parts.pop()!; // User
-const subDir = parts.join("/").toLowerCase(); // admin
+const { parts, subDir, rawName } = parseNamespace(inputName);
 
 const namePlural = pluralize(rawName.toLowerCase());
-const className = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join("") + 
-                 rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() + "Controller";
+const className = namespacePrefix(parts) + pascalCase(rawName) + "Controller";
+const listPath = urlPathPrefix(subDir, namePlural);
+const memberPath = `${listPath}/\${this.req.params.id}`;
 
-const root = process.cwd();
+const root = resolveRailsAppRoot();
 const controllerDir = path.join(root, "app/controllers", subDir);
 const viewBase = [...parts, rawName].map(p => p.toLowerCase()).join(".");
 const controllerPath = path.join(controllerDir, `${namePlural}.controller.ts`);
@@ -74,17 +75,17 @@ export class ${className} extends ${parentClass} {
 
   async create() {
     this.flash(FlashType.Success, { msg: this.t("flash.created") });
-    this.redirect("/${subDir ? subDir + "/" : ""}${rawName.toLowerCase()}");
+    this.redirect(\`${listPath}\`);
   }
 
   async update() {
     this.flash(FlashType.Success, { msg: this.t("flash.updated") });
-    this.redirect("/${subDir ? subDir + "/" : ""}${rawName.toLowerCase()}/\${this.req.params.id}");
+    this.redirect(\`${memberPath}\`);
   }
 
   async destroy() {
     this.flash(FlashType.Success, { msg: this.t("flash.destroyed") });
-    this.redirect("/${subDir ? subDir + "/" : ""}${rawName.toLowerCase()}");
+    this.redirect(\`${listPath}\`);
   }
 }
 `;
@@ -114,6 +115,6 @@ block content
 
 console.log(`
 \x1b[33mNext Steps:\x1b[0m
-Register routes in \x1b[35mapp/routes/index.ts\x1b[0m:
-  this.resource("${namePlural}", ${className}${isApi ? ", { api: true }" : ""});
+Register routes in \x1b[35mconfigs/routes/index.ts\x1b[0m:
+  this.resource(${className}${isApi ? ", { api: true }" : ""});
 `);

@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
 
 const args = process.argv.slice(2);
 if (args.length < 2) {
@@ -9,7 +10,7 @@ if (args.length < 2) {
 
 const type = args[0].toLowerCase(); // model or controller
 const name = args[1];
-const root = process.cwd();
+const root = resolveRailsAppRoot();
 
 const folder =
   type === "model" ? "app/models/concerns" : "app/controllers/concerns";

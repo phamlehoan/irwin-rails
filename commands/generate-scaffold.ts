@@ -1,6 +1,16 @@
 import fs from "fs";
 import path from "path";
 import pluralize from "pluralize";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
+import {
+  configsRoutePath,
+  namespacePrefix,
+  parseNamespace,
+  pascalCase,
+  routeClassName,
+  routeFileBase,
+  urlPathPrefix,
+} from "./generatorHelpers";
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
@@ -11,16 +21,17 @@ if (args.length < 1) {
 const isApi = args.includes("--api");
 const cleanArgs = args.filter(arg => arg !== "--api");
 
-const inputName = cleanArgs[0]; // Ví dụ: Admin/User
-const parts = inputName.split(/[:/]/);
-const rawModelName = parts.pop()!; // User
-const subDir = parts.join("/").toLowerCase(); // admin
+const { parts, subDir, rawName: rawModelName } = parseNamespace(cleanArgs[0]);
 
 const modelName = pluralize.singular(rawModelName);
 const modelLower = modelName.toLowerCase();
 const modelPlural = pluralize(modelLower);
-const className = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join("") + 
-                 modelName.charAt(0).toUpperCase() + modelName.slice(1).toLowerCase() + "Controller";
+const className =
+  namespacePrefix(parts) + pascalCase(modelName) + "Controller";
+const routeFile = routeFileBase(parts, modelName);
+const routeClass = routeClassName(parts, modelName);
+const listPath = urlPathPrefix(subDir, modelPlural);
+const memberPath = `${listPath}/\${this.req.params.id}`;
 
 const viewBase = [...parts, modelPlural].map(p => p.toLowerCase()).join(".");
 
@@ -29,15 +40,14 @@ const fields = cleanArgs.slice(1).map((f) => {
   return { name, type: type || "string" };
 });
 
-const root = process.cwd();
+const root = resolveRailsAppRoot();
 
 // Định nghĩa đường dẫn lưu file
 const controllerDir = path.join(root, "app/controllers", subDir);
 const viewsDir = path.join(root, "app/views", `${viewBase}.view`);
 const paths = {
   controller: path.join(controllerDir, `${modelPlural}.controller.ts`),
-  test: path.join(controllerDir, "__tests__", `${modelPlural}.controller.spec.ts`),
-  route: path.join(root, "app/routes", subDir, `${modelPlural}.route.ts`),
+  route: configsRoutePath(root, subDir, routeFile),
   viewsDir: viewsDir,
 };
 
@@ -115,7 +125,7 @@ export class ${className} extends ${parentClass} {
     const params = await this.params.permit(${fields.map((f) => `'${f.name}'`).join(", ")});
     await models.${modelLower}.create({ data: params });
     this.flash(FlashType.Success, { msg: this.t("flash.created") });
-    this.redirect(\`/${subDir ? subDir + "/" : ""}${modelPlural}\`);
+    this.redirect(\`${listPath}\`);
   }
 
   async update() {
@@ -125,41 +135,26 @@ export class ${className} extends ${parentClass} {
       data: params,
     });
     this.flash(FlashType.Success, { msg: this.t("flash.updated") });
-    this.redirect(\`/${subDir ? subDir + "/" : ""}${modelPlural}/\${this.req.params.id}\`);
+    this.redirect(\`${memberPath}\`);
   }
 
   async destroy() {
     await models.${modelLower}.delete({ where: { id: this.req.params.id } });
     this.flash(FlashType.Success, { msg: this.t("flash.destroyed") });
-    this.redirect(\`/${subDir ? subDir + "/" : ""}${modelPlural}\`);
+    this.redirect(\`${listPath}\`);
   }
 }
 `;
 
 // 2. Generate Route Template
-const routeTemplate = `import { RailsRoute } from "ts-rails";
-import { ${className} } from "@controllers/${subDir ? subDir + "/" : ""}${modelPlural}.controller";
+const routeTemplate = `import { ${className} } from "@controllers/${subDir ? subDir + "/" : ""}${modelPlural}.controller";
+import { RailsRoute } from "ts-rails";
 
-export class ${modelName}Route extends RailsRoute {
-  draw() {
-    this.resource("${modelPlural}", ${className}${isApi ? ", { api: true }" : ""});
+export class ${routeClass} extends RailsRoute {
+  public draw() {
+    this.resource(${className}${isApi ? ", { api: true }" : ""});
   }
 }
-`;
-
-// 4. Generate Test Template
-const testTemplate = `import { ${className} } from "../${modelPlural}.controller";
-
-describe("${className}", () => {
-  it("should have REST actions defined", () => {
-    const controller = new ${className}();
-    expect(controller.index).toBeDefined();
-    expect(controller.show).toBeDefined();
-    expect(controller.create).toBeDefined();
-    expect(controller.update).toBeDefined();
-    expect(controller.destroy).toBeDefined();
-  });
-});
 `;
 
 // 3. Generate Views (Index & Form)
@@ -241,7 +236,6 @@ const writeFile = (filePath: string, content: string) => {
 };
 
 writeFile(paths.controller, controllerTemplate);
-writeFile(paths.test, testTemplate);
 writeFile(paths.route, routeTemplate);
 
 if (!isApi) {
@@ -271,8 +265,9 @@ console.log(`
      updatedAt DateTime @updatedAt
    }
 2. Run: \x1b[36myarn db:migrate\x1b[0m
-3. Register the route in \x1b[35mapp/routes/index.ts\x1b[0m:
-   import { ${modelName}Route } from "./${subDir ? subDir + "/" : ""}${modelPlural}.route";
+3. Generate tests: \x1b[36mrails g test app/controllers/${subDir ? subDir + "/" : ""}${modelPlural}.controller.ts\x1b[0m
+4. Register the route in \x1b[35mconfigs/routes/index.ts\x1b[0m (or namespace index):
+   import { ${routeClass} } from "./${subDir ? subDir + "/" : ""}${routeFile}.route";
    // ... inside draw():
-   this.path("/${subDir ? subDir + "/" : ""}${modelPlural}", ${modelName}Route.draw());
+   this.path("${listPath}", ${routeClass}.draw());
 `);

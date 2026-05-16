@@ -1,6 +1,15 @@
 import fs from "fs";
 import path from "path";
 import pluralize from "pluralize";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
+import {
+  configsRoutePath,
+  namespacePrefix,
+  parseNamespace,
+  pascalCase,
+  routeClassName,
+  routeFileBase,
+} from "./generatorHelpers";
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
@@ -9,37 +18,36 @@ if (args.length < 1) {
 }
 
 const isApi = args.includes("--api");
-const cleanArgs = args.filter(arg => arg !== "--api");
+const cleanArgs = args.filter((arg) => arg !== "--api");
 
-const inputName = cleanArgs[0];
-const parts = inputName.split(/[:/]/);
-const rawName = parts.pop()!;
-const subDir = parts.join("/").toLowerCase();
+const { parts, subDir, rawName } = parseNamespace(cleanArgs[0]);
 const namePlural = pluralize(rawName.toLowerCase());
+const modelName = pluralize.singular(rawName);
 
-const root = process.cwd();
+const root = resolveRailsAppRoot();
 const controllerPath = path.join(
   root,
   "app/controllers",
   subDir,
   `${namePlural}.controller.ts`,
 );
-const routePath = path.join(
+const routePath = configsRoutePath(
   root,
-  "app/routes",
   subDir,
-  `${namePlural}.route.ts`,
+  routeFileBase(parts, modelName),
 );
 
-const className = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join("") + 
-                 rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() + "Controller";
+const className =
+  namespacePrefix(parts) + pascalCase(rawName) + "Controller";
+const routeClass = routeClassName(parts, modelName);
 
 let parentClass = "ApplicationController";
 let parentImport = ".";
 
 if (parts.length > 0) {
   const lastNamespace = parts[parts.length - 1].toLowerCase();
-  parentClass = lastNamespace.charAt(0).toUpperCase() + lastNamespace.slice(1) + "Controller";
+  parentClass =
+    lastNamespace.charAt(0).toUpperCase() + lastNamespace.slice(1) + "Controller";
   parentImport = `./${lastNamespace}.controller`;
 }
 
@@ -58,19 +66,22 @@ export class ${className} extends ${parentClass} {
   }
 
   async create() {
-    const params = await this.params.permit(${cleanArgs.slice(1).map(f => `'${f.split(':')[0]}'`).join(", ")});
+    const params = await this.params.permit(${cleanArgs
+      .slice(1)
+      .map((f) => `'${f.split(":")[0]}'`)
+      .join(", ")});
     const item = await models.${rawName.toLowerCase()}.create({ data: params });
     this.renderJson(item, 201);
   }
 }
 `;
 
-const routeTemplate = `import { RailsRoute } from "ts-rails";
-import { ${className} } from "@controllers/${subDir ? subDir + "/" : ""}${namePlural}.controller";
+const routeTemplate = `import { ${className} } from "@controllers/${subDir ? subDir + "/" : ""}${namePlural}.controller";
+import { RailsRoute } from "ts-rails";
 
-export class ${rawName}Route extends RailsRoute {
-  draw() {
-    this.resource("${namePlural}", ${className}, { only: ["index", "show", "create"]${isApi ? ", api: true" : ""} });
+export class ${routeClass} extends RailsRoute {
+  public draw() {
+    this.resource(${className}, { only: ["index", "show", "create"]${isApi ? ", api: true" : ""} });
   }
 }
 `;
@@ -86,5 +97,5 @@ writeFile(controllerPath, controllerTemplate);
 writeFile(routePath, routeTemplate);
 
 console.log(
-  `\n\x1b[33mResource generated!\x1b[0m (Remember to add to schema.prisma and routes/index.ts)`,
+  `\n\x1b[33mResource generated!\x1b[0m Register ${routeClass} in configs/routes/index.ts`,
 );

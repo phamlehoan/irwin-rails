@@ -1,7 +1,8 @@
 import path from "path";
 import fs from "fs";
 import repl from "repl";
-import { RailsApplication } from "../configs";
+import type { RailsApplication } from "../configs";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
 
 // Hỗ trợ nạp trực tiếp file .ts từ dự án
 try {
@@ -20,8 +21,7 @@ const originalInfo = console.info;
 console.log = () => {};
 console.info = () => {};
 
-const getApplication = () => {
-  const root = process.cwd();
+const getApplication = (root: string): RailsApplication | null => {
   const potentialPaths = [
     process.env.APP_PATH,
     path.join(root, "configs/application"),
@@ -61,8 +61,7 @@ const getApplication = () => {
   return null;
 };
 
-const getModels = () => {
-  const root = process.cwd();
+const getModels = (root: string) => {
   const modelPaths = [
     path.join(root, "app/models"),
     path.join(root, "src/app/models"),
@@ -79,7 +78,8 @@ const getModels = () => {
 };
 
 const startConsole = async () => {
-  const app = getApplication();
+  const root = resolveRailsAppRoot();
+  const app = getApplication(root);
   if (!app) {
     originalLog("[Error] Could not find Application instance.");
     process.exit(1);
@@ -105,7 +105,7 @@ const startConsole = async () => {
   });
 
   // Thiết lập lưu lịch sử câu lệnh (giống Rails console)
-  const historyFile = path.join(process.cwd(), ".rails_console_history");
+  const historyFile = path.join(root, ".rails_console_history");
   if (typeof (r as any).setupHistory === "function") {
     (r as any).setupHistory(historyFile, (err: any) => {
       if (err) originalLog("[Warning] Could not setup console history");
@@ -114,7 +114,7 @@ const startConsole = async () => {
 
   // Đưa các tài nguyên vào ngữ cảnh của REPL
   r.context.app = app;
-  r.context.models = getModels();
+  r.context.models = getModels(root);
 
   r.on("exit", () => process.exit());
 };

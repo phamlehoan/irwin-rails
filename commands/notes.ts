@@ -1,8 +1,10 @@
 import fs from "fs";
 import path from "path";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
 
-const root = process.cwd();
-const directories = ["app", "rails", "configs"];
+const root = resolveRailsAppRoot();
+/** Same idea as `bin/rails notes` — scan app source trees for annotation tags. */
+const directories = ["app", "configs", "lib", "__tests__"];
 const tags = ["TODO", "FIXME", "OPTIMIZE"];
 
 console.info("\n--- PROJECT NOTES ---\n");

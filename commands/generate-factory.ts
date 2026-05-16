@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
@@ -8,7 +9,7 @@ if (args.length < 1) {
 }
 
 const modelName = args[0];
-const root = process.cwd();
+const root = resolveRailsAppRoot();
 const factoryPath = path.join(
   root,
   "db/factories",

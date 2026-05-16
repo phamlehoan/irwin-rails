@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import pluralize from "pluralize";
+import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
@@ -23,7 +24,7 @@ const typeMap: Record<string, string> = {
   json: "Json",
 };
 
-const root = process.cwd();
+const root = resolveRailsAppRoot();
 const schemaPath = path.join(root, "configs/db/schema.prisma");
 
 if (!fs.existsSync(schemaPath)) {
