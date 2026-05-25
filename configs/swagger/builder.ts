@@ -1,52 +1,124 @@
-type HttpMethod = "get" | "post" | "put" | "delete" | "patch";
-
-/** Schema shorthand: { field: "string" } → OpenAPI schema */
-type SchemaShorthand = Record<string, string>;
+import type { OpenApiObjectSchema, SchemaShorthand } from "./validatorSchema";
+import type { ValidatorCtor } from "./validatorSchema";
 
 /** Response shorthand: { 200: "OK" } → OpenAPI responses */
 type ResponseShorthand = Record<number | string, string>;
-
-type ValidatorWithSchema = new () => object & {
-  schema?: Record<string, string>;
-  required?: readonly string[];
-};
 
 export interface DocOptions {
   path: string;
   summary?: string;
   tags?: string[];
-  /** Validator class (có .schema) hoặc shorthand */
-  params?: SchemaShorthand | ValidatorWithSchema;
-  /** Validator class (có .schema, .required) hoặc shorthand */
-  body?: SchemaShorthand | ValidatorWithSchema;
+  params?: SchemaShorthand;
+  body?: SchemaShorthand;
+  paramsOpenApi?: OpenApiObjectSchema;
+  bodyOpenApi?: OpenApiObjectSchema;
   requiredBody?: string[];
+  requiredParams?: string[];
+  requestBody?: Record<string, unknown>;
   file?: boolean;
   responses?: ResponseShorthand;
   auth?: boolean;
+  public?: boolean;
+}
+
+function toJsonSchemaProperty(type: string): Record<string, unknown> {
+  if (type === "number") return { type: "number" };
+  if (type === "boolean") return { type: "boolean" };
+  if (type === "string[]" || type === "array") {
+    return { type: "array", items: { type: "string" } };
+  }
+  return { type: "string" };
+}
+
+function pathParametersFromTemplate(swaggerPath: string) {
+  return [...swaggerPath.matchAll(/\{([^}]+)\}/g)].map((match) => ({
+    name: match[1],
+    in: "path",
+    required: true,
+    schema: { type: "string" },
+  }));
+}
+
+function queryParametersFromShorthand(
+  params: SchemaShorthand,
+  requiredFields?: string[],
+) {
+  return Object.entries(params).map(([name, type]) => ({
+    name,
+    in: "query",
+    required: requiredFields?.includes(name) ?? false,
+    schema: toJsonSchemaProperty(type),
+  }));
+}
+
+function requestBodyFromShorthand(body: SchemaShorthand, requiredBody?: string[]) {
+  const required = requiredBody ?? Object.keys(body);
+  return {
+    required: true,
+    content: {
+      "application/json": {
+        schema: {
+          type: "object",
+          required: required.length ? required : undefined,
+          properties: Object.fromEntries(
+            Object.entries(body).map(([k, v]) => [k, toJsonSchemaProperty(v)]),
+          ),
+        },
+      },
+    },
+  };
+}
+
+function requestBodyFromOpenApi(schema: OpenApiObjectSchema) {
+  return {
+    required: true,
+    content: {
+      "application/json": {
+        schema,
+      },
+    },
+  };
+}
+
+function mergeParameters(
+  existing: Array<Record<string, unknown>> | undefined,
+  extra: Array<Record<string, unknown>>,
+) {
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const p of existing ?? []) {
+    byKey.set(`${p.in}::${p.name}`, p);
+  }
+  for (const p of extra) {
+    byKey.set(`${p.in}::${p.name}`, p);
+  }
+  return [...byKey.values()];
 }
 
 /**
- * Tạo swagger operation từ shorthand - gọn hơn JSON thuần.
+ * Tạo swagger operation từ route `document` (đã qua resolveApiDocSchema).
  */
 export function buildSwaggerOp(opts: DocOptions): Record<string, unknown> {
-  const { path: _path, auth, ...rest } = opts;
+  const { path: swaggerPath, auth, ...rest } = opts;
   const op: Record<string, unknown> = {};
 
   if (rest.summary) op.summary = rest.summary;
   if (rest.tags) op.tags = rest.tags;
 
+  const parameters: Array<Record<string, unknown>> = [
+    ...pathParametersFromTemplate(swaggerPath),
+  ];
+
   if (rest.params && Object.keys(rest.params).length) {
-    const toSchema = (v: string) => {
-      if (v === "number") return { type: "number" as const };
-      if (v === "string[]" || v === "array")
-        return { type: "array" as const, items: { type: "string" } };
-      return { type: "string" as const };
-    };
-    op.parameters = Object.entries(rest.params).map(([name, type]) => ({
-      name,
-      in: "query",
-      schema: toSchema(type),
-    }));
+    parameters.push(
+      ...queryParametersFromShorthand(rest.params, rest.requiredParams),
+    );
+  }
+
+  if (parameters.length) {
+    op.parameters = mergeParameters(
+      op.parameters as Array<Record<string, unknown>> | undefined,
+      parameters,
+    );
   }
 
   if (rest.file) {
@@ -60,28 +132,12 @@ export function buildSwaggerOp(opts: DocOptions): Record<string, unknown> {
         },
       },
     };
+  } else if (rest.requestBody) {
+    op.requestBody = rest.requestBody;
+  } else if (rest.bodyOpenApi) {
+    op.requestBody = requestBodyFromOpenApi(rest.bodyOpenApi);
   } else if (rest.body && Object.keys(rest.body).length) {
-    const required = rest.requiredBody ?? Object.keys(rest.body);
-    const toSchema = (v: string) => {
-      if (v === "number") return { type: "number" };
-      if (v === "string[]" || v === "array")
-        return { type: "array", items: { type: "string" } };
-      return { type: "string" };
-    };
-    op.requestBody = {
-      required: true,
-      content: {
-        "application/json": {
-          schema: {
-            type: "object",
-            required,
-            properties: Object.fromEntries(
-              Object.entries(rest.body).map(([k, v]) => [k, toSchema(v)]),
-            ),
-          },
-        },
-      },
-    };
+    op.requestBody = requestBodyFromShorthand(rest.body, rest.requiredBody);
   }
 
   if (rest.responses) {
@@ -93,7 +149,11 @@ export function buildSwaggerOp(opts: DocOptions): Record<string, unknown> {
     );
   }
 
-  if (auth) op.security = [{ bearerAuth: [] }];
+  if (rest.public === true || auth === false) {
+    op.security = [];
+  } else if (auth) {
+    op.security = [{ bearerAuth: [] }];
+  }
 
   return op;
 }

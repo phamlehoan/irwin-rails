@@ -2,7 +2,7 @@
 import { Request, Response } from "express";
 import { Server as SocketServer } from "socket.io";
 import { ApiResponse } from "./response";
-import { createParamsProxy } from "./strongParams";
+import { createParamsProxy, type ParamsCallable } from "./strongParams";
 
 export interface BeforeActionOptions {
   only?: string[];
@@ -54,9 +54,11 @@ export class RailsController {
   /**
    * Helper params giống Rails.
    * Merge params, query, body lại làm một.
+   * - this.params / this.params() => merged data proxy
+   * - await this.params(MyValidator) => validate merged data theo field trong validator
    * @example await this.params(UserValidator).permit('email', 'password')
    */
-  protected get params(): ReturnType<typeof createParamsProxy> {
+  protected get params(): ParamsCallable {
     // Memoize params proxy trên request để tránh tạo lại nhiều lần trong cùng một action
     if (!(this.req as any)._irwinParamsProxy) {
       const data = { ...this.req.params, ...this.req.query, ...this.req.body };

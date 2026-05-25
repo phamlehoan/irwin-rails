@@ -4,6 +4,7 @@ import pluralize from "pluralize";
 import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
 import {
   configsRoutePath,
+  ensureFlashTypeEnum,
   namespacePrefix,
   parseNamespace,
   pascalCase,
@@ -234,6 +235,10 @@ const writeFile = (filePath: string, content: string) => {
   fs.writeFileSync(filePath, content);
   console.log(`\x1b[32mCREATE\x1b[0m ${path.relative(root, filePath)}`);
 };
+
+if (!isApi) {
+  ensureFlashTypeEnum(root, writeFile);
+}
 
 writeFile(paths.controller, controllerTemplate);
 writeFile(paths.route, routeTemplate);

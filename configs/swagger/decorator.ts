@@ -1,60 +1,52 @@
 /**
- * @ApiDoc - decorator cho Swagger metadata trên controller.
- * params/body có thể truyền Validator class (có static schema) - gọn nhất.
+ * @ApiDoc - decorator / route `document` cho Swagger.
+ * params/body: Validator class (static schema hoặc class-validator) hoặc shorthand.
  */
+import {
+  type OpenApiObjectSchema,
+  type SchemaShorthand,
+  type ValidatorCtor,
+  resolveFieldSchema,
+} from "./validatorSchema";
 
-type SchemaShorthand = Record<string, string>;
 type ResponseShorthand = Record<number | string, string>;
-
-type ValidatorWithSchema = new () => object & {
-  schema?: Record<string, string>;
-  required?: readonly string[];
-};
 
 export interface ApiDocOptions {
   summary?: string;
   tags?: string[];
+  /** Gắn Bearer JWT (`bearerAuth`). */
   auth?: boolean;
-  /** Query params: Validator class (có .schema) hoặc SchemaShorthand */
-  params?: SchemaShorthand | ValidatorWithSchema;
-  /** Body: Validator class (có .schema, .required) hoặc SchemaShorthand */
-  body?: SchemaShorthand | ValidatorWithSchema;
+  /** Endpoint công khai — ghi đè `security: []` khi spec có security global. */
+  public?: boolean;
+  params?: SchemaShorthand | ValidatorCtor | OpenApiObjectSchema;
+  requiredParams?: string[];
+  body?: SchemaShorthand | ValidatorCtor | OpenApiObjectSchema;
   requiredBody?: string[];
+  /** OpenAPI requestBody đầy đủ — ưu tiên cao nhất khi set. */
+  requestBody?: Record<string, unknown>;
   file?: boolean;
   responses?: ResponseShorthand;
 }
 
-function getSchemaFromValidator(Validator: ValidatorWithSchema): {
-  schema: SchemaShorthand;
-  required?: string[];
-} {
-  const v = Validator as any;
-  if (v?.schema) {
-    return {
-      schema: v.schema as SchemaShorthand,
-      required: v.required as string[] | undefined,
-    };
-  }
-  return { schema: {} };
-}
-
-export function resolveApiDocSchema(opts: ApiDocOptions): {
+export type ResolvedApiDocSchema = {
   params?: SchemaShorthand;
+  paramsOpenApi?: OpenApiObjectSchema;
+  requiredParams?: string[];
   body?: SchemaShorthand;
+  bodyOpenApi?: OpenApiObjectSchema;
   requiredBody?: string[];
-} {
-  const params =
-    typeof opts.params === "function"
-      ? getSchemaFromValidator(opts.params as ValidatorWithSchema).schema
-      : opts.params;
-  const body =
-    typeof opts.body === "function"
-      ? getSchemaFromValidator(opts.body as ValidatorWithSchema).schema
-      : opts.body;
-  const requiredBody =
-    opts.requiredBody ??
-    (typeof opts.body === "function"
-      ? getSchemaFromValidator(opts.body as ValidatorWithSchema).required
-      : undefined);
-  return { params, body, requiredBody };
+};
+
+export function resolveApiDocSchema(opts: ApiDocOptions): ResolvedApiDocSchema {
+  const params = resolveFieldSchema(opts.params, opts.requiredParams);
+  const body = resolveFieldSchema(opts.body, opts.requiredBody);
+
+  return {
+    params: params.shorthand,
+    paramsOpenApi: params.openApi,
+    requiredParams: params.required,
+    body: body.shorthand,
+    bodyOpenApi: body.openApi,
+    requiredBody: body.required,
+  };
 }

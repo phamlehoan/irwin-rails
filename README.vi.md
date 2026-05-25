@@ -332,7 +332,21 @@ h.assetPath("javascripts/main.ts"); // Vite manifest ở production
 
 ### Swagger
 
-Tuỳ chọn `document` trên route đăng ký OpenAPI. App override `setupSwagger()` và dùng `setupSwaggerUI`. Class validator trên `document.body` map sang JSON Schema.
+Route dùng `action(Controller, "method")` **tự đăng ký Swagger** (không bắt buộc `document`):
+
+- **Body (POST/PUT/PATCH):** suy từ `this.params(Validator)` trong action — đọc tên class + `.permit('field', …)` trong source.
+- **Path `{id}` / `:id`:** tự sinh parameter `in: path`.
+- **Query string (heuristic):** suy từ `req.query.foo` kèm `if (!foo)` trong action → `in: query`. Trường hợp phức tạp hơn: dùng `document.params` trên route hoặc `@ApiDoc({ params: { token: 'string' } })` trên controller method.
+- **POST không suy được body:** hiển thị JSON object trống (`additionalProperties`) để vẫn có ô nhập trên Swagger UI.
+- **`document` trên route** (hoặc shorthand `body`/`params`/`tags`…) **ghi đè** phần suy tự động.
+
+Chi tiết khi cần override:
+
+- `document.body` / `document.params`: truyền **Validator class** → ts-rails tự suy schema từ `class-validator` (field không `@IsOptional()` = required).
+- Nếu Validator có `static schema` / `static required` → **ưu tiên** config đó, phần còn thiếu bổ sung từ metadata.
+- Shorthand `{ email: "string" }` vẫn dùng được như override thuần.
+- `document.requestBody`: OpenAPI requestBody đầy đủ (ưu tiên cao nhất).
+- `resource()`: `document` mặc định + `documentByAction` ghi đè theo action (`create`, `index`, …).
 
 ### Logger & cache
 

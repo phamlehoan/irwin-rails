@@ -63,6 +63,7 @@ export function action(
   // Gắn metadata để lệnh 'rails routes' có thể nhận diện được Controller#Action
   (handler as any)._swaggerMetadata = {
     controller: Klass.name,
+    controllerClass: Klass,
     action: actionName,
   };
 

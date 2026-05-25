@@ -122,3 +122,25 @@ export class ${serviceParent.parentClass} extends ApplicationService {}
 
   writeFile(serviceParent.namespaceServicePath, content);
 }
+
+const FLASH_TYPE_ENUM = `/** Flash categories for express-flash (used by generated controllers). */
+export enum FlashType {
+  Errors = "errors",
+  Info = "info",
+  Success = "success",
+}
+`;
+
+/**
+ * Generated HTML controllers use FlashType — create configs/enum/index.ts when missing.
+ */
+export function ensureFlashTypeEnum(
+  root: string,
+  writeFile: (filePath: string, content: string) => void,
+): void {
+  const enumDir = path.join(root, "configs", "enum");
+  const enumPath = path.join(enumDir, "index.ts");
+  if (fs.existsSync(enumPath)) return;
+
+  writeFile(enumPath, FLASH_TYPE_ENUM);
+}

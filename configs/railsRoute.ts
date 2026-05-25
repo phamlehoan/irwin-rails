@@ -1,12 +1,13 @@
-import { getMetadataStorage } from "class-validator";
 import { RequestHandler, Router } from "express";
 import "reflect-metadata";
 import { action, ValidatorClass } from "../app";
 import {
   buildSwaggerOp,
-  DocOptions,
-  registerSwaggerPath,
+  defaultJsonRequestBody,
+  inferActionApiDoc,
+  mergeApiDocOptions,
   resolveApiDocSchema,
+  type ApiDocOptions,
 } from "./swagger";
 
 export enum RestActions {
@@ -34,11 +35,26 @@ export interface ActionPermissionMap {
 export interface CustomRouteOptions {
   setPermissionFor?: string;
   setPermissionForAny?: string[];
-  /** Document options. Body có thể truyền vào một Validator Class để tự động sinh Schema. */
-  document?: Omit<DocOptions, "path" | "body"> & {
-    body?: ValidatorClass | any;
-  };
+  /** OpenAPI — hoặc truyền `body`/`params`/`tags`… trực tiếp trên options (shorthand). */
+  document?: ApiDocOptions;
 }
+
+/** Cho phép `post(path, handler, { body: Validator, tags: [...] })` thay vì bọc trong `document`. */
+export type RouteHandlerOptions = CustomRouteOptions & Partial<ApiDocOptions>;
+
+const SWAGGER_OPTION_KEYS = [
+  "summary",
+  "tags",
+  "auth",
+  "public",
+  "params",
+  "requiredParams",
+  "body",
+  "requiredBody",
+  "requestBody",
+  "file",
+  "responses",
+] as const satisfies readonly (keyof ApiDocOptions)[];
 
 export interface RouteOptions {
   only?: RestActions[];
@@ -46,17 +62,16 @@ export interface RouteOptions {
   setPermissionFor?: string;
   /** Chấp nhận AM hoặc UM - dùng cho admin routes */
   setPermissionForAny?: string[];
-  /** Document options cho resource */
-  document?: {
-    tags?: string[];
-    summary?: string;
-    body?: ValidatorClass | any;
-    responses?: Record<number | string, string>;
-  };
+  /** Document options cho resource (mặc định cho mọi action API). */
+  document?: ApiDocOptions;
+  /** Ghi đè / bổ sung `document` theo từng action (create, index, …). */
+  documentByAction?: Partial<Record<RestActions, ApiDocOptions>>;
 }
 
 export abstract class RailsRoute {
   public readonly route: Router;
+  /** Bật sau `path(ValidateUserLoginMiddleware)` — route sau đó tự `auth: true` trên Swagger. */
+  private swaggerAuthGate = false;
   public static permissionFactory: PermissionHandlers;
   public static actionPermissionMap: ActionPermissionMap = {
     read: "READ",
@@ -84,68 +99,175 @@ export abstract class RailsRoute {
   }
 
   /**
-   * Trích xuất Swagger JSON Schema từ class-validator metadata.
+   * Gộp `document` + shorthand (`body`, `params`, …) trên route options.
+   * `document` ưu tiên khi trùng key.
    */
-  private extractSchemaFromValidator(Model: ValidatorClass) {
-    const metadata = getMetadataStorage();
-    const targetMetadata = metadata.getTargetValidationMetadatas(
-      Model,
-      Model.name,
-      true,
-      false,
-    );
+  private resolveRouteDocument(
+    options?: RouteHandlerOptions,
+  ): ApiDocOptions | undefined {
+    if (!options) return undefined;
 
-    const properties: Record<string, any> = {};
-    const required: string[] = [];
+    const fromTop: Record<string, unknown> = {};
+    for (const key of SWAGGER_OPTION_KEYS) {
+      const val = (options as Record<string, unknown>)[key];
+      if (val !== undefined) fromTop[key] = val;
+    }
 
-    targetMetadata.forEach((m) => {
-      const prop = m.propertyName;
-      if (properties[prop]) return;
+    if (options.document) {
+      return { ...fromTop, ...options.document };
+    }
 
-      // Lấy type từ Reflect Metadata (nhờ class-transformer/validator)
-      const designType = Reflect.getMetadata(
-        "design:type",
-        Model.prototype,
-        prop,
-      );
-      let swaggerType = "string";
-
-      if (designType === Number) swaggerType = "number";
-      else if (designType === Boolean) swaggerType = "boolean";
-      else if (designType === Array) swaggerType = "array";
-      else if (designType === Object) swaggerType = "object";
-
-      properties[prop] = {
-        type: swaggerType,
-        // Anh có thể map thêm các decorator như IsEmail, Min, Max vào đây
-        description: m.constraints?.join(", ") || "",
-      };
-
-      // Nếu không có decorator IsOptional thì coi như required
-      const isOptional = targetMetadata.some(
-        (meta) => meta.propertyName === prop && meta.type === "isOptional",
-      );
-      if (!isOptional) required.push(prop);
-    });
-
-    return {
-      type: "object",
-      properties,
-      required: required.length > 0 ? required : undefined,
-    };
+    return Object.keys(fromTop).length > 0
+      ? (fromTop as ApiDocOptions)
+      : undefined;
   }
 
-  private resolveBody(body: any) {
-    if (typeof body === "function" && body.prototype) {
-      return this.extractSchemaFromValidator(body as ValidatorClass);
+  private extractActionHandlerMeta(
+    handlers: RequestHandler[],
+  ):
+    | {
+        controllerClass: new (...args: any[]) => any;
+        action: string;
+        controller: string;
+      }
+    | undefined {
+    const lastHandler = handlers[handlers.length - 1];
+    const meta = (lastHandler as any)?._swaggerMetadata;
+    if (!meta?.controllerClass) return undefined;
+    return meta;
+  }
+
+  private attachSwaggerMetadata(
+    method: "get" | "post" | "put" | "delete" | "patch",
+    path: string,
+    handlers: RequestHandler[],
+    options?: RouteHandlerOptions,
+  ): void {
+    const swaggerPath = path.replace(/:([a-zA-Z0-9_]+)/g, "{$1}");
+    const routeDocument = this.resolveRouteDocument(options);
+    const actionMeta = this.extractActionHandlerMeta(handlers);
+
+    if (!routeDocument && !actionMeta) return;
+
+    let docInput: ApiDocOptions = {};
+
+    if (actionMeta) {
+      docInput = inferActionApiDoc(
+        actionMeta.controllerClass,
+        actionMeta.action,
+        method,
+        swaggerPath,
+      );
     }
-    return body;
+
+    docInput = mergeApiDocOptions(docInput, routeDocument);
+
+    if (
+      this.swaggerAuthGate &&
+      docInput.public !== true &&
+      docInput.auth !== false
+    ) {
+      docInput.auth = true;
+    }
+
+    if (actionMeta && !docInput.tags?.length) {
+      docInput.tags = [
+        actionMeta.controllerClass.name.replace(/Controller$/, ""),
+      ];
+    }
+
+    if (actionMeta && !docInput.summary) {
+      const cap =
+        actionMeta.action.charAt(0).toUpperCase() + actionMeta.action.slice(1);
+      docInput.summary = `${cap} ${docInput.tags?.[0] ?? actionMeta.controller}`;
+    }
+
+    if (
+      ["post", "put", "patch"].includes(method) &&
+      !docInput.body &&
+      !docInput.requestBody &&
+      !docInput.file
+    ) {
+      docInput.requestBody = defaultJsonRequestBody();
+    }
+
+    const defaultResponses: Record<string | number, string> =
+      method === "post" ? { 201: "Created" } : { 200: "OK" };
+
+    const { responses, ...opts } = docInput as Record<string, unknown>;
+    const operation = this.buildRouteSwaggerOp(swaggerPath, opts, {
+      responses:
+        (responses as Record<number | string, string>) || defaultResponses,
+    });
+
+    const lastHandler = handlers[handlers.length - 1];
+    if (typeof lastHandler === "function") {
+      const existingMeta = (lastHandler as any)._swaggerMetadata || {};
+      (lastHandler as any)._swaggerMetadata = {
+        ...existingMeta,
+        op: operation,
+        action: existingMeta.action || "custom",
+      };
+    }
+  }
+
+  /**
+   * Chuẩn hóa `document` → OpenAPI operation (params/body tự suy từ Validator nếu thiếu).
+   */
+  private buildRouteSwaggerOp(
+    swaggerPath: string,
+    document: Record<string, unknown> | undefined,
+    defaults: {
+      summary?: string;
+      tags?: string[];
+      auth?: boolean;
+      responses?: Record<number | string, string>;
+    },
+  ): Record<string, unknown> {
+    const docInput = { ...(document ?? {}) };
+    const resolved = resolveApiDocSchema(docInput as ApiDocOptions);
+
+    return buildSwaggerOp({
+      path: swaggerPath,
+      summary: (docInput.summary as string | undefined) ?? defaults.summary,
+      tags: (docInput.tags as string[] | undefined) ?? defaults.tags,
+      auth:
+        docInput.auth !== undefined
+          ? Boolean(docInput.auth)
+          : defaults.auth,
+      responses:
+        (docInput.responses as Record<number | string, string> | undefined) ??
+        defaults.responses,
+      file: docInput.file as boolean | undefined,
+      public: docInput.public as boolean | undefined,
+      requestBody: docInput.requestBody as Record<string, unknown> | undefined,
+      params: resolved.params,
+      paramsOpenApi: resolved.paramsOpenApi,
+      requiredParams: resolved.requiredParams,
+      body: resolved.body,
+      bodyOpenApi: resolved.bodyOpenApi,
+      requiredBody: resolved.requiredBody,
+    });
+  }
+
+  private isAuthGateMiddleware(handler: unknown): boolean {
+    const h = Array.isArray(handler)
+      ? handler[handler.length - 1]
+      : handler;
+    const meta = (h as { _swaggerMetadata?: { controller?: string } })
+      ?._swaggerMetadata;
+    return meta?.controller === "ValidateUserLoginMiddleware";
   }
 
   /**
    * Alias cho this.route.use()
    */
   protected path(...args: any[]) {
+    for (const item of args) {
+      if (this.isAuthGateMiddleware(item)) {
+        this.swaggerAuthGate = true;
+      }
+    }
     this.route.use(...(args as [any]));
   }
 
@@ -269,25 +391,19 @@ export abstract class RailsRoute {
               422: "Validation failed",
             };
 
-      const docInput = { ...options?.document };
-      if (docInput.body) docInput.body = this.resolveBody(docInput.body);
-
-      const resolved = resolveApiDocSchema(docInput ?? {});
-      const docOpts = {
-        path: swaggerPath,
-        ...baseDoc,
-        ...docInput,
-        // Priority: 1. options.document.summary, 2. generated default
+      const docInput = {
+        ...options?.document,
+        ...options?.documentByAction?.[actionName as RestActions],
+      };
+      const op = this.buildRouteSwaggerOp(swaggerPath, docInput, {
         summary: baseDoc.summary || defaultSummary,
-        params: resolved.params,
-        body: resolved.body,
-        requiredBody: resolved.requiredBody,
+        tags: baseDoc.tags || defaultTags,
+        auth: baseDoc.auth,
         responses: (options?.document?.responses ?? defaultResponses) as Record<
           number | string,
           string
         >,
-      };
-      const op = buildSwaggerOp(docOpts);
+      });
 
       const handlers: any[] = [];
       const permCode =
@@ -405,17 +521,17 @@ export abstract class RailsRoute {
 
   protected get(
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected get(
     path: string,
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected get(
     arg1: string | RequestHandler | RequestHandler[],
-    arg2?: RequestHandler | RequestHandler[] | CustomRouteOptions,
-    arg3?: CustomRouteOptions,
+    arg2?: RequestHandler | RequestHandler[] | RouteHandlerOptions,
+    arg3?: RouteHandlerOptions,
   ) {
     const { path, handlers, options } = this.resolveArgs(arg1, arg2, arg3);
     this.registerCustomRoute("get", path, handlers, options);
@@ -423,17 +539,17 @@ export abstract class RailsRoute {
 
   protected post(
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected post(
     path: string,
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected post(
     arg1: string | RequestHandler | RequestHandler[],
-    arg2?: RequestHandler | RequestHandler[] | CustomRouteOptions,
-    arg3?: CustomRouteOptions,
+    arg2?: RequestHandler | RequestHandler[] | RouteHandlerOptions,
+    arg3?: RouteHandlerOptions,
   ) {
     const { path, handlers, options } = this.resolveArgs(arg1, arg2, arg3);
     this.registerCustomRoute("post", path, handlers, options);
@@ -441,17 +557,17 @@ export abstract class RailsRoute {
 
   protected put(
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected put(
     path: string,
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected put(
     arg1: string | RequestHandler | RequestHandler[],
-    arg2?: RequestHandler | RequestHandler[] | CustomRouteOptions,
-    arg3?: CustomRouteOptions,
+    arg2?: RequestHandler | RequestHandler[] | RouteHandlerOptions,
+    arg3?: RouteHandlerOptions,
   ) {
     const { path, handlers, options } = this.resolveArgs(arg1, arg2, arg3);
     this.registerCustomRoute("put", path, handlers, options);
@@ -459,17 +575,17 @@ export abstract class RailsRoute {
 
   protected delete(
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected delete(
     path: string,
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected delete(
     arg1: string | RequestHandler | RequestHandler[],
-    arg2?: RequestHandler | RequestHandler[] | CustomRouteOptions,
-    arg3?: CustomRouteOptions,
+    arg2?: RequestHandler | RequestHandler[] | RouteHandlerOptions,
+    arg3?: RouteHandlerOptions,
   ) {
     const { path, handlers, options } = this.resolveArgs(arg1, arg2, arg3);
     this.registerCustomRoute("delete", path, handlers, options);
@@ -477,17 +593,17 @@ export abstract class RailsRoute {
 
   protected patch(
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected patch(
     path: string,
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ): void;
   protected patch(
     arg1: string | RequestHandler | RequestHandler[],
-    arg2?: RequestHandler | RequestHandler[] | CustomRouteOptions,
-    arg3?: CustomRouteOptions,
+    arg2?: RequestHandler | RequestHandler[] | RouteHandlerOptions,
+    arg3?: RouteHandlerOptions,
   ) {
     const { path, handlers, options } = this.resolveArgs(arg1, arg2, arg3);
     this.registerCustomRoute("patch", path, handlers, options);
@@ -497,7 +613,7 @@ export abstract class RailsRoute {
     method: "get" | "post" | "put" | "delete" | "patch",
     path: string,
     handlers: RequestHandler | RequestHandler[],
-    options?: CustomRouteOptions,
+    options?: RouteHandlerOptions,
   ) {
     let finalHandlers: RequestHandler[] = Array.isArray(handlers)
       ? handlers
@@ -521,65 +637,20 @@ export abstract class RailsRoute {
       }
     }
 
-    // 2. Swagger Registration
-    if (options?.document) {
-      // Tự động convert path Express (:id) sang Swagger ({id}) nếu không có path cụ thể
-      const swaggerPath = path.replace(/:([a-zA-Z0-9_]+)/g, "{$1}");
-
-      // Tự động suy diễn tags từ tên Controller nếu chưa có
-      if (!options.document.tags && !Array.isArray(handlers)) {
-        // handlers có thể là [middleware, controllerAction] hoặc controllerAction
-        // Ta cần tìm handler cuối cùng (thường là controller action) để lấy tên class
-        const lastHandler = Array.isArray(handlers)
-          ? handlers[handlers.length - 1]
-          : handlers;
-        // Lưu ý: Việc lấy tên class từ bound function (action(...)) khó thực hiện trực tiếp
-        // vì 'action' trả về một hàm nặc danh.
-        // Tuy nhiên, logic hiện tại của 'resource' đã xử lý việc này.
-        // Đối với custom route (get/post...), ta chấp nhận tags do người dùng truyền hoặc để trống.
-        // Nếu muốn tự động hoàn toàn, ta cần thay đổi cách 'action' lưu metadata.
-      }
-
-      // Default responses logic
-      const defaultResponses: Record<string | number, string> =
-        method === "post" ? { 201: "Created" } : { 200: "OK" };
-
-      const { responses, ...opts } = options.document as any;
-
-      const docInput = { ...opts };
-      if (docInput.body) docInput.body = this.resolveBody(docInput.body);
-
-      const resolved = resolveApiDocSchema(docInput as any);
-      const operation = buildSwaggerOp({
-        path: swaggerPath,
-        ...docInput,
-        ...resolved,
-        responses: responses || defaultResponses,
-      });
-
-      const lastHandler = finalHandlers[finalHandlers.length - 1];
-      if (typeof lastHandler === "function") {
-        // Bảo lưu metadata hiện có (từ helper action()) và bổ sung thông tin Swagger
-        const existingMeta = (lastHandler as any)._swaggerMetadata || {};
-        (lastHandler as any)._swaggerMetadata = {
-          ...existingMeta,
-          op: operation,
-          action: existingMeta.action || (handlers as any).name || "custom",
-        };
-      }
-    }
+    // 2. Swagger — tự suy từ controller action + route `document` (nếu có)
+    this.attachSwaggerMetadata(method, path, finalHandlers, options);
 
     (this.route as any)[method](path, ...finalHandlers);
   }
 
   private resolveArgs(
     arg1: string | RequestHandler | RequestHandler[],
-    arg2?: RequestHandler | RequestHandler[] | CustomRouteOptions,
-    arg3?: CustomRouteOptions,
+    arg2?: RequestHandler | RequestHandler[] | RouteHandlerOptions,
+    arg3?: RouteHandlerOptions,
   ) {
     let path = "/";
     let handlers: RequestHandler | RequestHandler[];
-    let options: CustomRouteOptions | undefined;
+    let options: RouteHandlerOptions | undefined;
 
     if (typeof arg1 === "string") {
       path = arg1;
@@ -587,7 +658,7 @@ export abstract class RailsRoute {
       options = arg3;
     } else {
       handlers = arg1 as RequestHandler | RequestHandler[];
-      options = arg2 as CustomRouteOptions;
+      options = arg2 as RouteHandlerOptions;
     }
 
     return { path, handlers, options };

@@ -2,7 +2,13 @@ import fs from "fs";
 import path from "path";
 import pluralize from "pluralize";
 import { resolveRailsAppRoot } from "./resolveRailsAppRoot";
-import { namespacePrefix, parseNamespace, pascalCase, urlPathPrefix } from "./generatorHelpers";
+import {
+  ensureFlashTypeEnum,
+  namespacePrefix,
+  parseNamespace,
+  pascalCase,
+  urlPathPrefix,
+} from "./generatorHelpers";
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
@@ -96,6 +102,10 @@ const writeFile = (filePath: string, content: string) => {
   fs.writeFileSync(filePath, content);
   console.log(`\x1b[32mCREATE\x1b[0m ${path.relative(root, filePath)}`);
 };
+
+if (!isApi) {
+  ensureFlashTypeEnum(root, writeFile);
+}
 
 writeFile(controllerPath, template);
 
